@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Brightwheel Login",
+        "description": "Brightwheel uses bot protection that blocks direct login. You need to provide your auth cookie from a browser session.\n\nRun: node scripts/refresh_brightwheel_cookie.js\n\nOr copy the _brightwheel_v2 cookie from DevTools after logging in at schools.mybrightwheel.com.",
+        "data": {
+          "auth_cookie": "Auth Cookie (_brightwheel_v2)"
+        }
+      },
+      "reconfigure": {
+        "title": "Refresh Brightwheel Cookie",
+        "description": "The Brightwheel auth cookie expires periodically. Paste a fresh _brightwheel_v2 cookie below.\n\nRun: node scripts/refresh_brightwheel_cookie.js",
+        "data": {
+          "auth_cookie": "Auth Cookie (_brightwheel_v2)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid or expired auth cookie. Please extract a fresh cookie.",
+      "cannot_connect": "Cannot connect to Brightwheel"
+    }
+  }
+}
