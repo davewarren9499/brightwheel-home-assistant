@@ -20,6 +20,20 @@ from .coordinator import BrightwheelCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+_MEAL_TYPE_LABELS = {
+    1: "breakfast",
+    2: "snack",
+    3: "lunch",
+    4: "dinner",
+}
+
+
+def _meal_type_label(activity: dict[str, Any]) -> str:
+    blob = activity.get("details_blob") or {}
+    meal_type = blob.get("food_meal_type")
+    return _MEAL_TYPE_LABELS.get(meal_type, "meal")
+
+
 def _actor_name(activity: dict[str, Any] | None) -> str | None:
     """Extract the actor's full name from an activity."""
     if activity is None:
@@ -53,6 +67,7 @@ async def async_setup_entry(
                 BrightwheelLastCheckinSensor(coordinator, student_id, first_name, entry),
                 BrightwheelLastPhotoSensor(coordinator, student_id, first_name, entry),
                 BrightwheelLastMessageSensor(coordinator, student_id, first_name, entry),
+                BrightwheelLastActivitySensor(coordinator, student_id, first_name, entry),
                 BrightwheelActivityCountSensor(coordinator, student_id, first_name, entry),
             ]
         )
@@ -330,15 +345,34 @@ class BrightwheelActivityCountSensor(BrightwheelSensorBase):
         for act in activities:
             atype = act.get("action_type", "unknown")
             type_counts[atype] = type_counts.get(atype, 0) + 1
-        # Debug: expose one sample activity per action type so we can inspect the real API shape
-        samples: dict[str, Any] = {}
-        for act in activities:
-            atype = act.get("action_type", "unknown")
-            if atype not in samples:
-                samples[atype] = act
+        # Build a human-readable day summary
+        naps = data.get("today_naps", [])
+        diapers = data.get("today_diapers", [])
+        meals = data.get("today_meals", [])
+        bottles = data.get("today_bottles", [])
+        photos = data.get("today_photos", [])
+        checkin = data.get("last_checkin")
+
+        parts = []
+        if checkin:
+            checkin_time = checkin.get("event_date", "")[:16].replace("T", " ")
+            status = "In" if checkin.get("state") == "1" else "Out"
+            parts.append(f"{status} since {checkin_time}")
+        if naps:
+            parts.append(f"{len(naps)} nap event(s)")
+        meal_labels = [_meal_type_label(m) for m in meals]
+        if meal_labels:
+            parts.append(", ".join(meal_labels))
+        if bottles:
+            parts.append(f"{len(bottles)} bottle(s)")
+        if diapers:
+            parts.append(f"{len(diapers)} diaper(s)")
+        if photos:
+            parts.append(f"{len(photos)} photo(s)")
+
         return {
             "activity_type_counts": type_counts,
-            "debug_samples": samples,
+            "today_summary": " • ".join(parts) if parts else "No activities yet",
         }
 
 
@@ -359,7 +393,8 @@ class BrightwheelLastMealSensor(BrightwheelSensorBase):
         meal = data["last_meal"]
         tags = meal.get("menu_item_tags") or []
         items = [t.get("name", "") for t in tags if t.get("name")]
-        return ", ".join(items) if items else "meal"
+        label = _meal_type_label(meal)
+        return ", ".join(items) if items else label
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -376,6 +411,7 @@ class BrightwheelLastMealSensor(BrightwheelSensorBase):
             items = [t.get("name", "") for t in mtags if t.get("name")]
             meal_summaries.append({
                 "event_date": m.get("event_date"),
+                "meal_type": _meal_type_label(m),
                 "items": items,
                 "food_type": m_blob.get("food_type", ""),
                 "note": m.get("note"),
@@ -383,6 +419,7 @@ class BrightwheelLastMealSensor(BrightwheelSensorBase):
         blob = meal.get("details_blob") or {}
         return {
             "event_date": meal.get("event_date"),
+            "meal_type": _meal_type_label(meal),
             "food_items": [t.get("name", "") for t in tags],
             "food_type": blob.get("food_type", ""),
             "note": meal.get("note"),
@@ -481,4 +518,96 @@ class BrightwheelLastMessageSensor(BrightwheelSensorBase):
             "actor_name": _actor_name(msg),
             "all_messages": message_summaries,
             "message_count": len(all_messages),
+        }
+
+
+_ACTIVITY_LABELS: dict[str, str] = {
+    "ac_nap": "Nap",
+    "ac_potty": "Diaper",
+    "ac_food": "Meal",
+    "ac_checkin": "Check-in",
+    "ac_photo": "Photo",
+    "ac_video": "Video",
+    "ac_note": "Note",
+    "ac_observation": "Observation",
+    "ac_kudo": "Kudo",
+}
+
+
+def _activity_description(activity: dict[str, Any]) -> str:
+    """Return a short human-readable description of any activity."""
+    action = activity.get("action_type", "")
+    label = _ACTIVITY_LABELS.get(action, action)
+
+    if action == "ac_nap":
+        state = activity.get("state", "")
+        return f"Nap {'started' if str(state) == '1' else 'ended'}"
+
+    if action == "ac_potty":
+        blob = activity.get("details_blob") or {}
+        potty_type = blob.get("potty_type", "diaper")
+        extras = blob.get("potty_extras", [])
+        detail = ", ".join(extras) if extras else potty_type
+        return f"Diaper: {detail}"
+
+    if action == "ac_food":
+        blob = activity.get("details_blob") or {}
+        food_type = blob.get("food_type", "")
+        if food_type == "bottle":
+            amount = blob.get("amount") or 0
+            unit = blob.get("amount_type", "oz")
+            return f"Bottle: {amount} {unit}" if amount else "Bottle"
+        meal_label = _meal_type_label(activity)
+        tags = activity.get("menu_item_tags") or []
+        items = [t.get("name", "") for t in tags if t.get("name")]
+        return f"{meal_label.capitalize()}: {', '.join(items)}" if items else meal_label.capitalize()
+
+    if action == "ac_checkin":
+        state = activity.get("state", "")
+        return "Checked in" if str(state) == "1" else "Checked out"
+
+    if action in ("ac_photo", "ac_video"):
+        note = activity.get("note") or ""
+        return f"Photo: {note[:80]}" if note else "Photo posted"
+
+    note = activity.get("note") or ""
+    return f"{label}: {note[:80]}" if note else label
+
+
+class BrightwheelLastActivitySensor(BrightwheelSensorBase):
+    """Sensor showing the most recent activity of any type."""
+
+    def __init__(self, coordinator, student_id, first_name, entry) -> None:
+        super().__init__(
+            coordinator, student_id, first_name, entry, "last_activity", "Last Activity"
+        )
+        self._attr_icon = "mdi:timeline-clock"
+
+    @property
+    def native_value(self) -> str:
+        data = self._student_data
+        if data is None:
+            return "none"
+        activities = data.get("activities", [])
+        if not activities:
+            return "none"
+        return _activity_description(activities[0])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._student_data
+        if data is None:
+            return {}
+        activities = data.get("activities", [])
+        if not activities:
+            return {}
+        last = activities[0]
+        media = last.get("media") or {}
+        return {
+            "event_date": last.get("event_date"),
+            "action_type": last.get("action_type"),
+            "actor_name": _actor_name(last),
+            "note": last.get("note"),
+            "photo_url": media.get("image_url"),
+            "thumbnail_url": media.get("thumbnail_url"),
         }
