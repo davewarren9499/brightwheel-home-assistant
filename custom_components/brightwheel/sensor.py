@@ -49,7 +49,10 @@ async def async_setup_entry(
                 BrightwheelLastNapSensor(coordinator, student_id, first_name, entry),
                 BrightwheelLastDiaperSensor(coordinator, student_id, first_name, entry),
                 BrightwheelLastBottleSensor(coordinator, student_id, first_name, entry),
+                BrightwheelLastMealSensor(coordinator, student_id, first_name, entry),
                 BrightwheelLastCheckinSensor(coordinator, student_id, first_name, entry),
+                BrightwheelLastPhotoSensor(coordinator, student_id, first_name, entry),
+                BrightwheelLastMessageSensor(coordinator, student_id, first_name, entry),
                 BrightwheelActivityCountSensor(coordinator, student_id, first_name, entry),
             ]
         )
@@ -328,3 +331,143 @@ class BrightwheelActivityCountSensor(BrightwheelSensorBase):
             atype = act.get("action_type", "unknown")
             type_counts[atype] = type_counts.get(atype, 0) + 1
         return {"activity_type_counts": type_counts}
+
+
+class BrightwheelLastMealSensor(BrightwheelSensorBase):
+    """Sensor for the most recent solid food meal."""
+
+    def __init__(self, coordinator, student_id, first_name, entry) -> None:
+        super().__init__(
+            coordinator, student_id, first_name, entry, "last_meal", "Last Meal"
+        )
+        self._attr_icon = "mdi:food"
+
+    @property
+    def native_value(self) -> str:
+        data = self._student_data
+        if data is None or data["last_meal"] is None:
+            return "none"
+        meal = data["last_meal"]
+        tags = meal.get("menu_item_tags") or []
+        items = [t.get("name", "") for t in tags if t.get("name")]
+        return ", ".join(items) if items else "meal"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._student_data
+        if data is None or data["last_meal"] is None:
+            return {}
+        meal = data["last_meal"]
+        tags = meal.get("menu_item_tags") or []
+        all_meals = data.get("today_meals", [])
+        meal_summaries = []
+        for m in all_meals:
+            mtags = m.get("menu_item_tags") or []
+            m_blob = m.get("details_blob") or {}
+            items = [t.get("name", "") for t in mtags if t.get("name")]
+            meal_summaries.append({
+                "event_date": m.get("event_date"),
+                "items": items,
+                "food_type": m_blob.get("food_type", ""),
+                "note": m.get("note"),
+            })
+        blob = meal.get("details_blob") or {}
+        return {
+            "event_date": meal.get("event_date"),
+            "food_items": [t.get("name", "") for t in tags],
+            "food_type": blob.get("food_type", ""),
+            "note": meal.get("note"),
+            "actor_name": _actor_name(meal),
+            "action_type": meal.get("action_type"),
+            "all_meals": meal_summaries,
+            "meal_count": len(all_meals),
+        }
+
+
+class BrightwheelLastPhotoSensor(BrightwheelSensorBase):
+    """Sensor for the most recent photo or video posted."""
+
+    def __init__(self, coordinator, student_id, first_name, entry) -> None:
+        super().__init__(
+            coordinator, student_id, first_name, entry, "last_photo", "Last Photo"
+        )
+        self._attr_icon = "mdi:camera"
+
+    @property
+    def native_value(self) -> str:
+        data = self._student_data
+        if data is None or data["last_photo"] is None:
+            return "none"
+        return data["last_photo"].get("event_date", "unknown")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._student_data
+        if data is None or data["last_photo"] is None:
+            return {}
+        photo = data["last_photo"]
+        blob = photo.get("details_blob") or {}
+        all_photos = data.get("today_photos", [])
+        photo_summaries = []
+        for p in all_photos:
+            p_blob = p.get("details_blob") or {}
+            photo_summaries.append({
+                "event_date": p.get("event_date"),
+                "action_type": p.get("action_type"),
+                "photo_url": p_blob.get("photo_url") or p_blob.get("media_url") or p.get("media_url"),
+                "thumbnail_url": p_blob.get("thumbnail_url") or p_blob.get("thumb_url"),
+                "note": p.get("note"),
+            })
+        return {
+            "event_date": photo.get("event_date"),
+            "action_type": photo.get("action_type"),
+            "photo_url": blob.get("photo_url") or blob.get("media_url") or photo.get("media_url"),
+            "thumbnail_url": blob.get("thumbnail_url") or blob.get("thumb_url"),
+            "note": photo.get("note"),
+            "actor_name": _actor_name(photo),
+            "all_photos": photo_summaries,
+            "photo_count": len(all_photos),
+        }
+
+
+class BrightwheelLastMessageSensor(BrightwheelSensorBase):
+    """Sensor for the most recent teacher note, observation, or kudo."""
+
+    def __init__(self, coordinator, student_id, first_name, entry) -> None:
+        super().__init__(
+            coordinator, student_id, first_name, entry, "last_message", "Last Message"
+        )
+        self._attr_icon = "mdi:message-text"
+
+    @property
+    def native_value(self) -> str:
+        data = self._student_data
+        if data is None or data["last_message"] is None:
+            return "none"
+        msg = data["last_message"]
+        note = msg.get("note") or ""
+        return note[:255] if note else msg.get("action_type", "message")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._student_data
+        if data is None or data["last_message"] is None:
+            return {}
+        msg = data["last_message"]
+        all_messages = data.get("today_messages", [])
+        message_summaries = []
+        for m in all_messages:
+            message_summaries.append({
+                "event_date": m.get("event_date"),
+                "action_type": m.get("action_type"),
+                "note": m.get("note"),
+                "actor_name": _actor_name(m),
+            })
+        return {
+            "event_date": msg.get("event_date"),
+            "action_type": msg.get("action_type"),
+            "note": msg.get("note"),
+            "actor_name": _actor_name(msg),
+            "all_messages": message_summaries,
+            "message_count": len(all_messages),
+        }

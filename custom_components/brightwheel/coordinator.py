@@ -96,10 +96,16 @@ class BrightwheelCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "last_nap": None,
                     "last_diaper": None,
                     "last_bottle": None,
+                    "last_meal": None,
                     "last_checkin": None,
+                    "last_photo": None,
+                    "last_message": None,
                     "today_bottles": [],
+                    "today_meals": [],
                     "today_naps": [],
                     "today_diapers": [],
+                    "today_photos": [],
+                    "today_messages": [],
                 }
 
                 # Activities arrive newest-first
@@ -119,8 +125,20 @@ class BrightwheelCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             entry["today_bottles"].append(activity)
                             if entry["last_bottle"] is None:
                                 entry["last_bottle"] = activity
+                        else:
+                            entry["today_meals"].append(activity)
+                            if entry["last_meal"] is None:
+                                entry["last_meal"] = activity
                     elif action == "ac_checkin" and entry["last_checkin"] is None:
                         entry["last_checkin"] = activity
+                    elif action in ("ac_photo", "ac_video"):
+                        entry["today_photos"].append(activity)
+                        if entry["last_photo"] is None:
+                            entry["last_photo"] = activity
+                    elif action in ("ac_note", "ac_observation", "ac_kudo"):
+                        entry["today_messages"].append(activity)
+                        if entry["last_message"] is None:
+                            entry["last_message"] = activity
 
             return data
 

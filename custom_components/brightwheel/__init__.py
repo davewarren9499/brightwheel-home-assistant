@@ -8,7 +8,7 @@ from .api import BrightwheelClient
 from .const import CONF_AUTH_COOKIE, DOMAIN
 from .coordinator import BrightwheelCoordinator
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "binary_sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
