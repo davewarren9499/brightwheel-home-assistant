@@ -330,7 +330,16 @@ class BrightwheelActivityCountSensor(BrightwheelSensorBase):
         for act in activities:
             atype = act.get("action_type", "unknown")
             type_counts[atype] = type_counts.get(atype, 0) + 1
-        return {"activity_type_counts": type_counts}
+        # Debug: expose one sample activity per action type so we can inspect the real API shape
+        samples: dict[str, Any] = {}
+        for act in activities:
+            atype = act.get("action_type", "unknown")
+            if atype not in samples:
+                samples[atype] = act
+        return {
+            "activity_type_counts": type_counts,
+            "debug_samples": samples,
+        }
 
 
 class BrightwheelLastMealSensor(BrightwheelSensorBase):
