@@ -407,7 +407,9 @@ class BrightwheelLastPhotoSensor(BrightwheelSensorBase):
         data = self._student_data
         if data is None or data["last_photo"] is None:
             return "none"
-        return data["last_photo"].get("event_date", "unknown")
+        photo = data["last_photo"]
+        note = photo.get("note") or ""
+        return note[:255] if note else photo.get("action_type", "photo")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -415,23 +417,23 @@ class BrightwheelLastPhotoSensor(BrightwheelSensorBase):
         if data is None or data["last_photo"] is None:
             return {}
         photo = data["last_photo"]
-        blob = photo.get("details_blob") or {}
         all_photos = data.get("today_photos", [])
         photo_summaries = []
         for p in all_photos:
-            p_blob = p.get("details_blob") or {}
+            media = p.get("media") or {}
             photo_summaries.append({
                 "event_date": p.get("event_date"),
                 "action_type": p.get("action_type"),
-                "photo_url": p_blob.get("photo_url") or p_blob.get("media_url") or p.get("media_url"),
-                "thumbnail_url": p_blob.get("thumbnail_url") or p_blob.get("thumb_url"),
+                "photo_url": media.get("image_url"),
+                "thumbnail_url": media.get("thumbnail_url"),
                 "note": p.get("note"),
             })
+        media = photo.get("media") or {}
         return {
             "event_date": photo.get("event_date"),
             "action_type": photo.get("action_type"),
-            "photo_url": blob.get("photo_url") or blob.get("media_url") or photo.get("media_url"),
-            "thumbnail_url": blob.get("thumbnail_url") or blob.get("thumb_url"),
+            "photo_url": media.get("image_url"),
+            "thumbnail_url": media.get("thumbnail_url"),
             "note": photo.get("note"),
             "actor_name": _actor_name(photo),
             "all_photos": photo_summaries,

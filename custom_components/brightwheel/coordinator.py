@@ -16,17 +16,15 @@ _LOGGER = logging.getLogger(__name__)
 def _is_bottle(activity: dict) -> bool:
     """Return True if a Brightwheel ac_food activity is a bottle, not solid food."""
     blob = activity.get("details_blob") or {}
-    if blob.get("food_type") == "bottle":
+    food_type = blob.get("food_type", "")
+    if food_type == "bottle":
         return True
-    # Fallback: keyword matching for older entries without food_type
+    if food_type == "food":
+        return False
+    # food_type missing — fall back to keyword matching in the note
     note = (activity.get("note") or "").lower()
     keywords = {"bottle", "formula", "breast milk", "breastmilk", "oz", "ml"}
-    if any(kw in note for kw in keywords):
-        return True
-    tags = activity.get("menu_item_tags") or []
-    if not tags:
-        return True
-    return False
+    return any(kw in note for kw in keywords)
 
 
 def _extract_bottle_info(activity: dict) -> dict:
